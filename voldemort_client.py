@@ -431,10 +431,7 @@ class VoldemortHTTP(object):
     def http(self, conn, method, path, data=None, version=None):
         """Make a HTTP request to Voldemort, return the response body.
 
-        Will automatically add timestamp, nonce, hmac, service, host.
-
         * *method* must be ``'GET'``, ``'PUT'`` or ``'DELETE'``
-        * *path* is the Voldemort path (e.g. ``'/test/00000568656c6c6f'``)
         """
         headers = {}
         if not path[:1] == '/':
