@@ -737,8 +737,9 @@ class VoldemortStore(object):
         packed_key = self.key_serializer.to_bytes(key)
         return self.connection.route_request(packed_key)
 
-    def put(self, key, value):
-        version = self.get(key)[1] or VectorClock()
+    def put(self, key, value, version=None):
+        if version is None:
+            version = self.get(key)[1] or VectorClock()
         packed_key = self.key_serializer.to_bytes(key)
         packed_value = self.value_serializer.to_bytes(value)
         return self.connection.put_raw(self.store_name,
