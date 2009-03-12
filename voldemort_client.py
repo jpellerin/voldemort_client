@@ -249,8 +249,6 @@ def fnv_hash(bytes):
 
 class StringSerializer(object):
     def __init__(self, schema_map={}, has_version=False):
-        assert schema_map == {}
-        assert has_version == False
         self.schema_map = schema_map
         self.has_version = has_version
         self.newest_version = max(schema_map) if schema_map else 0
@@ -307,10 +305,22 @@ class NotJSONSerializer(object):
             ' '.join('%s=%r' % (k, getattr(self, k)) for k in ATTRS))
 
 
+class IdentitySerializer(object):
+    def __init__(self, schema_map={}, has_version=False):
+        self.schema_map = schema_map
+        self.has_version = has_version
+        self.newest_version = max(schema_map) if schema_map else 0
+    def to_bytes(self, s):
+        return s
+    def from_bytes(self, bytes):
+        return bytes
+
+
 def serializer(name, schema_map, has_version):
     SERIALIZERS = {
         'json': NotJSONSerializer,
         'string': StringSerializer,
+        'identity': IdentitySerializer
     }
     return SERIALIZERS[name](schema_map, has_version)
 
@@ -353,11 +363,15 @@ class VoldemortTCP(object):
     def __init__(self, host, socket_port):
         self.host = host
         self.socket_port = socket_port
-
+        self._sock = None
+        
     def get_connection(self):
+        if self._sock:
+            return self._sock
         sock = socket.socket()
         sock.connect((self.host, self.socket_port))
         sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+        self._sock = sock
         return sock
 
     def send_cmd(self, conn, op, store_name, packed_key, extra):
@@ -385,33 +399,36 @@ class VoldemortTCP(object):
 
     def get_raw(self, store_name, packed_key):
         res = []
-        with closing(self.get_connection()) as conn:
-            self.send_cmd(conn, 'GET', store_name, packed_key, [])
-            num_results = struct.unpack('>i', sockrecv(conn, 4))[0]
-            for i in xrange(num_results):
-                chunk_len = struct.unpack('>i', sockrecv(conn, 4))[0]
-                chunk = sockrecv(conn, chunk_len)
-                clock = VectorClock.from_bytes(chunk)
-                res.append((chunk[clock.size_in_bytes:], clock))
+        #with closing(self.get_connection()) as conn:
+        conn = self.get_connection()
+        self.send_cmd(conn, 'GET', store_name, packed_key, [])
+        num_results = struct.unpack('>i', sockrecv(conn, 4))[0]
+        for i in xrange(num_results):
+            chunk_len = struct.unpack('>i', sockrecv(conn, 4))[0]
+            chunk = sockrecv(conn, chunk_len)
+            clock = VectorClock.from_bytes(chunk)
+            res.append((chunk[clock.size_in_bytes:], clock))
         return res
 
     def put_raw(self, store_name, packed_key, packed_value, version):
         packed_version = version.to_bytes()
         chunk = packed_version + packed_value
-        with closing(self.get_connection()) as conn:
-            self.send_cmd(conn, 'PUT', store_name, packed_key, [
-                struct.pack('>i', len(chunk)),
-                chunk,
+        #with closing(self.get_connection()) as conn:
+        conn = self.get_connection()
+        self.send_cmd(conn, 'PUT', store_name, packed_key, [
+            struct.pack('>i', len(chunk)),
+            chunk,
             ])
 
     def delete_raw(self, store_name, packed_key, version):
         packed_version = version.to_bytes()
-        with closing(self.get_connection()) as conn:
-            self.send_cmd(conn, 'DELETE', store_name, packed_key, [
-                struct.pack('>h', len(packed_version)),
-                packed_version,
+        #with closing(self.get_connection()) as conn:
+        conn = self.get_connection()
+        self.send_cmd(conn, 'DELETE', store_name, packed_key, [
+            struct.pack('>h', len(packed_version)),
+            packed_version,
             ])
-            return sockrecv(conn, 1) == '\x01'
+        return sockrecv(conn, 1) == '\x01'
 
 
 class VoldemortHTTP(object):
@@ -642,6 +659,8 @@ class ConsistentRouter(object):
                 raise ValueError("Missing tag %s" % (i,))
         self.partitions = plist
 
+    # FIXME this isn't right -- always using num replicas instead
+    # of num reads/writes
     def route_request(self, key):
         p = self.partitions
         num_results = self.num_replicas
@@ -697,6 +716,8 @@ class ConsistentRouter(object):
         return self.resolve_conflicts([v for (node, v) in results])
 
     def delete_raw(self, store_name, packed_key, version):
+        # FIXME after required-writes nodes, push the del to
+        # a bg thread and return
         for node in self.route_request(packed_key):
             node.delete_raw(store_name, packed_key, version)
 
@@ -705,6 +726,8 @@ class ConsistentRouter(object):
         master = nodes[0]
         master_v = version.incremented(master.id)
         master.put_raw(store_name, packed_key, packed_value, master_v)
+        # FIXME after required-writes nodes, push the write to
+        # a bg thread and return
         for node in nodes[1:]:
             node.put_raw(store_name, packed_key, packed_value, master_v)
         return version.incremented(master.id)

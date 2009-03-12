@@ -113,6 +113,19 @@ def collect_stats(conf, ec2):
         stats['collisions'] += batch['collisions']
         stats['get'].extend(batch['get'])
         stats['put'].extend(batch['put'])
+
+        log_file = "/tmp/voldemort-%s.log" % ix
+        print "Collecting log file from %s into %s" % (instance, log_file)
+        cmd = ['scp', '-C', '-i', conf.aws_ssh_key_path,
+               'root@%s:/tmp/voldemort.log' % instance.public_dns_name,
+               log_file]
+        p = subprocess.Popen(cmd,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (out, err) = p.communicate()
+        if p.returncode != 0:
+            print "failed to collect log from %s: %s/%s" % (instance,
+                                                            out, err)
+            continue        
     return stats
     
 
@@ -248,14 +261,11 @@ def ensure_started(conf, instance):
         'voldy_dir': conf.voldy_dir,            
         }
                 
-    cmd = "cd %(voldy_dir)/project-voldemort && " \
-          "nohup ./bin/voldemort-server.sh config/ec2 > /tmp/voldemort.log &"
+    cmd = "cd %(voldy_dir)s/project-voldemort && " \
+          "nohup ./bin/voldemort-server.sh config/ec2 " \
+          "> /tmp/voldemort.log 2>&1 </dev/null & " % args
     
-    p = remote(conf, instance, cmd)
-    (out, err) = p.communicate()
-    if p.returncode != 0:
-        print "%s is not ready %s/%s" % (instance, out, err)
-        return False
+    remote(conf, instance, cmd, bg=True)
     return True
 
 
@@ -298,7 +308,8 @@ def upload(conf, instance, make=True):
     
     cmd = ['rsync', '-avz', '-e', "ssh -i %s" % conf.aws_ssh_key_path,
            '--exclude', '*.pyc', '--exclude', '.git', '--exclude', '.svn',
-           '--exclude', 'config/data', '--exclude', '*.egg',
+           '--exclude', 'config/*/data', '--exclude', '*.egg', '--exclude',
+           'docs', '--exclude', 'example', 
            '%s/' % root,
            'root@%s:%s' % (instance.public_dns_name, conf.voldy_dir)]
     print ' '.join(cmd)
@@ -314,10 +325,11 @@ def upload(conf, instance, make=True):
 
 def remote(conf, instance, cmd):
     print instance, cmd
-    return subprocess.Popen(['ssh', '-i', conf.aws_ssh_key_path,
-                             '-o',  'StrictHostKeyChecking no',
-                             'root@%s' % instance.public_dns_name,
-                             cmd],
+    command = ['ssh', '-i', conf.aws_ssh_key_path,
+               '-o',  'StrictHostKeyChecking no',
+               'root@%s' % instance.public_dns_name,
+               cmd]
+    return subprocess.Popen(command,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
                             
