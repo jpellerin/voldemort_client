@@ -105,14 +105,14 @@ def collect_stats(conf, ec2):
         if p.returncode != 0:
             print "failed to collect stats from %s: %s/%s" % (instance,
                                                               out, err)
-            continue
-        print "Collected"
-        sf = open(stats_file, 'r')
-        batch = pickle.load(sf)
-        sf.close()
-        stats['collisions'] += batch['collisions']
-        stats['get'].extend(batch['get'])
-        stats['put'].extend(batch['put'])
+        else:
+            print "Collected"
+            sf = open(stats_file, 'r')
+            batch = pickle.load(sf)
+            sf.close()
+            stats['collisions'] += batch['collisions']
+            stats['get'].extend(batch['get'])
+            stats['put'].extend(batch['put'])
 
         log_file = "/tmp/voldemort-%s.log" % ix
         print "Collecting log file from %s into %s" % (instance, log_file)
@@ -125,7 +125,6 @@ def collect_stats(conf, ec2):
         if p.returncode != 0:
             print "failed to collect log from %s: %s/%s" % (instance,
                                                             out, err)
-            continue        
     return stats
     
 
@@ -265,7 +264,7 @@ def ensure_started(conf, instance):
           "nohup ./bin/voldemort-server.sh config/ec2 " \
           "> /tmp/voldemort.log 2>&1 </dev/null & " % args
     
-    remote(conf, instance, cmd, bg=True)
+    remote(conf, instance, cmd)
     return True
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import voldemort
+import voldemort_client as voldemort
 
 from optparse import OptionParser
 from threading import Thread
@@ -113,7 +113,7 @@ def opts():
 
     parser.add_option('--host', dest='host', default='localhost',
                       action='store', help='Connect to host')
-    parser.add_option('-p', '--port', dest='port', default=9200,
+    parser.add_option('-p', '--port', dest='port', default=6666,
                       action='store', help='Connect to port')
     parser.add_option('-s', '--sleep', dest='sleep', default='2',
                       action='store', help='Time to sleep between requests '
@@ -127,7 +127,7 @@ def opts():
     parser.add_option('-x', '--max-value-size', default='4096',
                       dest='max_value', action='store',
                       help='Max length of each value')
-    parser.add_option('-l', '--log', default='load_thrift.log',
+    parser.add_option('-l', '--log', default='load_stats.log',
                       dest='log', action='store',
                       help='Periodically log load stats to this file')
     parser.add_option('--verbose', default=False,
