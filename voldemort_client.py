@@ -643,6 +643,8 @@ class ConsistentRouter(object):
         self.store = store
         self.nodes = nodes
         self.num_replicas = store.replication_factor
+        self.num_reads = store.required_reads
+        self.num_writes = store.required_writes
         pmap = {}
         for node in nodes:
             for partition in node.partitions:
@@ -659,8 +661,6 @@ class ConsistentRouter(object):
                 raise ValueError("Missing tag %s" % (i,))
         self.partitions = plist
 
-    # FIXME this isn't right -- always using num replicas instead
-    # of num reads/writes
     def route_request(self, key):
         p = self.partitions
         num_results = self.num_replicas
@@ -709,7 +709,7 @@ class ConsistentRouter(object):
 
     def get_raw(self, store_name, packed_key):
         results = []
-        for node in self.route_request(packed_key):
+        for node in self.route_request(packed_key)[:self.num_reads]:
             res = node.get_raw(store_name, packed_key)
             results.extend((node, v) for v in res)
         results = self.read_repair(store_name, packed_key, results)
